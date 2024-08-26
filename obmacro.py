@@ -162,9 +162,10 @@ def perform_final_calculations(merged_df_corrected):
     merged_df_corrected['CTN%'] = ((merged_df_corrected['Cum CTN Qty'] / merged_df_corrected['CO Qty']) * 100).round(2)
     merged_df_corrected['Del%'] = ((merged_df_corrected['Delivered Qty'] / merged_df_corrected['CO Qty']) * 100).round(2)
 
-    # Calculate 'Delays'
-    valid_dates = merged_df_corrected['POWH-PLN'].notna() & merged_df_corrected['Requested Wh Date'].notna()
-    merged_df_corrected.loc[valid_dates, 'Delays'] = (merged_df_corrected.loc[valid_dates, 'Requested Wh Date'] - merged_df_corrected.loc[valid_dates, 'POWH-PLN']).dt.days
+    # Ensure 'Delays' column is only calculated if 'POWH-PLN' and 'Requested Wh Date' are datetime
+    if pd.api.types.is_datetime64_any_dtype(merged_df_corrected['POWH-PLN']) and pd.api.types.is_datetime64_any_dtype(merged_df_corrected['Requested Wh Date']):
+        valid_dates = merged_df_corrected['POWH-PLN'].notna() & merged_df_corrected['Requested Wh Date'].notna()
+        merged_df_corrected.loc[valid_dates, 'Delays'] = (merged_df_corrected.loc[valid_dates, 'Requested Wh Date'] - merged_df_corrected.loc[valid_dates, 'POWH-PLN']).dt.days
 
     # Create 'Delay/Early' column based on the condition using numpy where
     merged_df_corrected['Delay/Early'] = np.where(merged_df_corrected['Delays'] > 0, "Delay", "No Delay")
