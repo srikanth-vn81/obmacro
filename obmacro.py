@@ -44,15 +44,17 @@ def process_excel(file):
     # Apply the transformation function to the "VPO No" column
     data_cleaned['PO'] = data_cleaned['VPO No'].apply(transform_vpo_no)
 
-    # Ensure 'Production Plan ID' column exists
-    data_cleaned['Production Plan ID'] = np.where(
-        data_cleaned['Production Plan ID'].isna() & data_cleaned['PO'].str.startswith('8'),
-        data_cleaned['PO'],
-        np.where(
-            data_cleaned['Production Plan ID'].isna() & data_cleaned['Season'].str[-2:] == '23',
-            'Season-23',
-            data_cleaned['Production Plan ID']
-        )
+    # Ensure 'Production Plan ID' column exists and is populated correctly
+    if 'Production Plan ID' not in data_cleaned.columns:
+        data_cleaned['Production Plan ID'] = None
+
+    data_cleaned['Production Plan ID'] = data_cleaned.apply(
+        lambda row: (
+            str(row['PO']) if pd.isna(row['Production Plan ID']) and str(row['PO']).startswith('8') else
+            "Season-23" if (pd.isna(row['Production Plan ID']) or row['Production Plan ID'] == '') and str(row['Season'])[-2:] == '23' else
+            row['Production Plan ID']
+        ),
+        axis=1
     )
 
     # Convert specific columns to text
