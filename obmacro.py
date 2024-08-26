@@ -2,8 +2,6 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from io import BytesIO
-from openpyxl import load_workbook
-from openpyxl.styles import PatternFill, Font
 
 # Function to transform the "VPO No" column (for Excel processing)
 def transform_vpo_no(vpo_no):
@@ -41,7 +39,7 @@ def process_excel(file):
     data_cleaned = data.drop(columns=columns_to_drop)
 
     # Filter data
-    data_cleaned = data_cleaned[data_cleaned['Group Tech Class']=="BELUNIQLO"]
+    data_cleaned = data_cleaned[data_cleaned['Group Tech Class'] == "BELUNIQLO"]
 
     # Apply the transformation function to the "VPO No" column
     data_cleaned['PO'] = data_cleaned['VPO No'].apply(transform_vpo_no)
@@ -276,12 +274,13 @@ def reorder_and_save_columns(final_merged_data_with_status):
     # Reorder the columns
     final_merged_data_with_status = final_merged_data_with_status[desired_order]
 
-    # Save the modified DataFrame to a new Excel file
+    # Save the modified DataFrame to a new Excel file in memory
     output = BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         final_merged_data_with_status.to_excel(writer, index=False, sheet_name='Final Report')
         writer.save()
 
+    output.seek(0)
     return output
 
 # Streamlit app
@@ -300,35 +299,40 @@ def main():
     st.write("This tool processes multiple files, merges them, and applies updates and conditional formatting.")
     
     if uploaded_excel_1 and uploaded_csv and uploaded_excel_2 and uploaded_delivery_status:
-        ob_clean_df = process_excel(uploaded_excel_1)
-        spl_clean_df = process_csv(uploaded_csv)
-        rfid_clean_df = process_rfid_excel(uploaded_excel_2)
+        st.write("Files uploaded successfully!")  # Debugging point
 
-        # Update the 'Production Plan ID' in the OB_clean DataFrame
-        updated_df = update_production_plan_id(ob_clean_df, spl_clean_df)
+        try:
+            ob_clean_df = process_excel(uploaded_excel_1)
+            spl_clean_df = process_csv(uploaded_csv)
+            rfid_clean_df = process_rfid_excel(uploaded_excel_2)
 
-        # Merge the updated OB_clean DataFrame with SPL_clean DataFrame
-        merged_df = merge_dataframes(updated_df, spl_clean_df)
+            # Update the 'Production Plan ID' in the OB_clean DataFrame
+            updated_df = update_production_plan_id(ob_clean_df, spl_clean_df)
 
-        # Perform final calculations and add columns
-        final_df = perform_final_calculations(merged_df)
+            # Merge the updated OB_clean DataFrame with SPL_clean DataFrame
+            merged_df = merge_dataframes(updated_df, spl_clean_df)
 
-        # Add 'Color Code' to the final merged data based on 'Color Name'
-        final_df_with_color_code = add_color_code(final_df)
+            # Perform final calculations and add columns
+            final_df = perform_final_calculations(merged_df)
 
-        # Perform final merge with RFID data and add 'Status' column
-        final_merged_data_with_status = final_merge_and_status(final_df_with_color_code, rfid_clean_df)
+            # Add 'Color Code' to the final merged data based on 'Color Name'
+            final_df_with_color_code = add_color_code(final_df)
 
-        # Reorder columns and save the final report
-        output = reorder_and_save_columns(final_merged_data_with_status)
+            # Perform final merge with RFID data and add 'Status' column
+            final_merged_data_with_status = final_merge_and_status(final_df_with_color_code, rfid_clean_df)
 
-        # Provide download option for the final processed data
-        st.download_button(
-            label="Download Finalized Report with Updates",
-            data=output.getvalue(),
-            file_name="finalizedreport_updated.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+            # Reorder columns and save the final report
+            output = reorder_and_save_columns(final_merged_data_with_status)
+
+            # Provide download option for the final processed data
+            st.download_button(
+                label="Download Finalized Report with Updates",
+                data=output.getvalue(),
+                file_name="finalizedreport_updated.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+        except Exception as e:
+            st.error(f"An error occurred: {e}")  # Error handling
 
 if __name__ == "__main__":
     main()
