@@ -153,6 +153,14 @@ def perform_final_calculations(merged_df_corrected):
     for col in ['MODE', 'EXF-PLN', 'ETD-PLN', 'Factory – Remarks', 'Delays', 'Delay/Early']:
         merged_df_corrected[col] = ''
 
+    # Convert columns to numeric types before performing calculations
+    numeric_columns = ['Cum Cut Qty', 'CO Qty', 'Cum Sew In Qty', 'Cum Sew In Rej Qty',
+                       'Cum SewOut Qty', 'Cum Sew Out Rej Qty', 'Cum CTN Qty',
+                       'Delivered Qty', 'Min CO Sts']
+
+    for col in numeric_columns:
+        merged_df_corrected[col] = pd.to_numeric(merged_df_corrected[col], errors='coerce').fillna(0)
+
     # Calculate percentages
     merged_df_corrected['Cut%'] = ((merged_df_corrected['Cum Cut Qty'] / merged_df_corrected['CO Qty']) * 100).round(2)
     merged_df_corrected['Sewin%'] = ((merged_df_corrected['Cum Sew In Qty'] / merged_df_corrected['CO Qty']) * 100).round(2)
