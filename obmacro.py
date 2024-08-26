@@ -175,6 +175,9 @@ def perform_final_calculations(merged_df_corrected):
         valid_dates = merged_df_corrected['POWH-PLN'].notna() & merged_df_corrected['Requested Wh Date'].notna()
         merged_df_corrected.loc[valid_dates, 'Delays'] = (merged_df_corrected.loc[valid_dates, 'Requested Wh Date'] - merged_df_corrected.loc[valid_dates, 'POWH-PLN']).dt.days
 
+    # Ensure 'Delays' is numeric before comparison
+    merged_df_corrected['Delays'] = pd.to_numeric(merged_df_corrected['Delays'], errors='coerce').fillna(0)
+
     # Create 'Delay/Early' column based on the condition using numpy where
     merged_df_corrected['Delay/Early'] = np.where(merged_df_corrected['Delays'] > 0, "Delay", "No Delay")
 
@@ -208,7 +211,7 @@ def final_merge_and_status(merged_data, rfid_data):
     merged_final_data['RFID%'] = ((merged_final_data['RFID'] / merged_final_data['CO Qty']) * 100).round(2)
 
     # Process 'Del%' and add 'Status'
-    merged_final_data['Del_Dummy%'] = merged_final_data['Del%'].str.rstrip('%').astype(float).fillna(0)
+    merged_final_data['Del_Dummy%'] = pd.to_numeric(merged_final_data['Del%'].str.rstrip('%'), errors='coerce').fillna(0)
     merged_final_data['Min CO Sts'] = pd.to_numeric(merged_final_data['Min CO Sts'], errors='coerce').fillna(0)
 
     merged_final_data['Status'] = merged_final_data.apply(
