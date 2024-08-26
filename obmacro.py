@@ -169,33 +169,33 @@ def perform_final_calculations(merged_df_corrected):
     # Calculate percentages
     merged_df_corrected['Cut%'] = ((merged_df_corrected['Cum Cut Qty'] / merged_df_corrected['CO Qty']) * 100).round(2)
     merged_df_corrected['Sewin%'] = ((merged_df_corrected['Cum Sew In Qty'] / merged_df_corrected['CO Qty']) * 100).round(2)
-    merged_df_corrected['Sewin Rej%'] = ((merged_df_corrected['Cum Sew In Rej Qty'] / merged_df.corrected['Cum Sew In Qty']) * 100).round(2)
+    merged_df_corrected['Sewin Rej%'] = ((merged_df_corrected['Cum Sew In Rej Qty'] / merged_df_corrected['Cum Sew In Qty']) * 100).round(2)
     merged_df_corrected['Sewout%'] = ((merged_df_corrected['Cum SewOut Qty'] / merged_df_corrected['CO Qty']) * 100).round(2)
-    merged_df_corrected['Sewout Rej%'] = ((merged_df_corrected['Cum Sew Out Rej Qty'] / merged_df.corrected['Cum SewOut Qty']) * 100).round(2)
-    merged_df_corrected['CTN%'] = ((merged_df_corrected['Cum CTN Qty'] / merged_df.corrected['CO Qty']) * 100).round(2)
-    merged_df_corrected['Del%'] = ((merged_df.corrected['Delivered Qty'] / merged_df.corrected['CO Qty']) * 100).round(2)
+    merged_df_corrected['Sewout Rej%'] = ((merged_df_corrected['Cum Sew Out Rej Qty'] / merged_df_corrected['Cum SewOut Qty']) * 100).round(2)
+    merged_df_corrected['CTN%'] = ((merged_df_corrected['Cum CTN Qty'] / merged_df_corrected['CO Qty']) * 100).round(2)
+    merged_df_corrected['Del%'] = ((merged_df_corrected['Delivered Qty'] / merged_df_corrected['CO Qty']) * 100).round(2)
 
     # Calculate 'Delays'
-    if 'Requested Wh Date' in merged_df.corrected.columns and 'POWH-PLN' in merged_df.corrected.columns:
-        valid_dates = merged_df.corrected['POWH-PLN'].notna() & merged_df.corrected['Requested Wh Date'].notna()
+    if 'Requested Wh Date' in merged_df_corrected.columns and 'POWH-PLN' in merged_df_corrected.columns:
+        valid_dates = merged_df_corrected['POWH-PLN'].notna() & merged_df_corrected['Requested Wh Date'].notna()
         if valid_dates.any():
-            merged_df.corrected.loc[valid_dates, 'Delays'] = (merged_df.corrected.loc[valid_dates, 'Requested Wh Date'] - merged_df.corrected.loc[valid_dates, 'POWH-PLN']).dt.days
+            merged_df_corrected.loc[valid_dates, 'Delays'] = (merged_df_corrected.loc[valid_dates, 'Requested Wh Date'] - merged_df_corrected.loc[valid_dates, 'POWH-PLN']).dt.days
 
     # Create 'Delay/Early' column based on the condition using numpy where
-    if 'Delays' in merged_df.corrected.columns:
-        merged_df.corrected['Delay/Early'] = np.where(merged_df.corrected['Delays'] > 0, "Delay", "No Delay")
+    if 'Delays' in merged_df_corrected.columns:
+        merged_df_corrected['Delay/Early'] = np.where(merged_df_corrected['Delays'] > 0, "Delay", "No Delay")
 
     # Apply the final filter
-    merged_df.corrected = merged_df.corrected[(merged_df.corrected['Production Plan ID'] != '0') & (merged_df.corrected['Production Plan ID'] != 'Season-23')]
+    merged_df_corrected = merged_df_corrected[(merged_df_corrected['Production Plan ID'] != '0') & (merged_df_corrected['Production Plan ID'] != 'Season-23')]
 
-    return merged_df.corrected
+    return merged_df_corrected
 
 # Function to add 'Color Code' to merged data based on 'Color Name'
-def add_color_code(merged_df.corrected):
+def add_color_code(merged_df_corrected):
     # Create a new field 'Color Code' by taking the first 2 digits from the 'Color Name' field and convert it to text
-    if 'Color Name' in merged_df.corrected.columns:
-        merged_df.corrected['Color Code'] = merged_df.corrected['Color Name'].astype(str).str[:2]
-    return merged_df.corrected
+    if 'Color Name' in merged_df_corrected.columns:
+        merged_df_corrected['Color Code'] = merged_df_corrected['Color Name'].astype(str).str[:2]
+    return merged_df_corrected
 
 # Function to perform final merge with RFID data and add the 'Status' column
 def final_merge_and_status(merged_data, rfid_data):
