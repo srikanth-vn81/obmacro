@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from io import BytesIO
+from openpyxl import load_workbook
+from openpyxl.styles import PatternFill, Font
 
 # Function to transform the "VPO No" column (for Excel processing)
 def transform_vpo_no(vpo_no):
@@ -24,7 +26,8 @@ def convert_to_date(x):
 
 # Function to process the uploaded Excel file
 def process_excel(file):
-    data = pd.read_excel(file, sheet_name='Sheet1')
+    excel_data = pd.ExcelFile(file)
+    data = pd.read_excel(excel_data, sheet_name='Sheet1')
 
     # List of columns to drop
     columns_to_drop = ['CBU', 'Buyer','Buyer Division Code', 'Cust Style No', 'Product Group',
@@ -39,15 +42,16 @@ def process_excel(file):
     data_cleaned = data.drop(columns=columns_to_drop)
 
     # Filter data
-    data_cleaned = data_cleaned[data_cleaned['Group Tech Class'] == "BELUNIQLO"]
+    data_cleaned = data_cleaned[data_cleaned['Group Tech Class']=="BELUNIQLO"]
 
     # Apply the transformation function to the "VPO No" column
     data_cleaned['PO'] = data_cleaned['VPO No'].apply(transform_vpo_no)
 
-    # Ensure 'Production Plan ID' column exists and is populated correctly
+    # Ensure 'Production Plan ID' column exists
     if 'Production Plan ID' not in data_cleaned.columns:
         data_cleaned['Production Plan ID'] = None
 
+    # Update 'Production Plan ID' column for rows that are blank
     data_cleaned['Production Plan ID'] = data_cleaned.apply(
         lambda row: (
             str(row['PO']) if pd.isna(row['Production Plan ID']) and str(row['PO']).startswith('8') else
@@ -59,7 +63,9 @@ def process_excel(file):
 
     # Convert specific columns to text
     columns_to_convert = ['Min CO Sts', 'Order placement date', 'PCD']
-    data_cleaned[columns_to_convert] = data_cleaned[columns_to_convert].astype(str)
+    for column in columns_to_convert:
+        if column in data_cleaned.columns:
+            data_cleaned[column] = data_cleaned[column].astype(str)
 
     # Convert 'PCD' column to datetime
     data_cleaned['PCD'] = data_cleaned['PCD'].apply(convert_to_date)
@@ -68,7 +74,8 @@ def process_excel(file):
 
 # Function to convert date columns from object to datetime format (for CSV processing)
 def convert_dates_to_datetime(df, date_columns):
-    df[date_columns] = df[date_columns].apply(pd.to_datetime, format='%m/%d/%Y', errors='coerce')
+    for col in date_columns:
+        df[col] = pd.to_datetime(df[col], format='%m/%d/%Y', errors='coerce')
     return df
 
 # Function to process the uploaded CSV file
@@ -80,53 +87,67 @@ def process_csv(file):
                        'Production Plan Type Name', 'EXF', 'Contracted Date', 
                        'Requested Wh Date', 'Business Unit', 'PO Order NO']
 
-    # Filter relevant columns
-    new_csv_data_cleaned = new_csv_data.loc[:, columns_to_keep].copy()
+    # Check if these columns are present in the new data
+    available_columns = [col for col in columns_to_keep if col in new_csv_data.columns]
+
+    # Drop all other columns except the ones to keep
+    new_csv_data_cleaned = new_csv_data.loc[:, available_columns].copy()
 
     # Rename the column 'PO Order NO' to 'PO'
     new_csv_data_cleaned.rename(columns={'PO Order NO': 'PO'}, inplace=True)
 
-    # Convert the date columns
+    # List of date columns to convert
     date_columns = ['EXF', 'Contracted Date', 'Requested Wh Date']
+
+    # Convert the date columns
     new_csv_data_cleaned = convert_dates_to_datetime(new_csv_data_cleaned, date_columns)
 
     return new_csv_data_cleaned
 
 # Function to process the third Excel file (RFID Gihan)
 def process_rfid_excel(file):
-    data = pd.read_excel(file, sheet_name='sheet1')
+    data_2_original = pd.read_excel(file, sheet_name='sheet1')
 
-    # Forward fill 'DO No./Product No.' column
-    data['DO No./Product No.'] = data['DO No./Product No.'].ffill()
+    # Unmerge the 'DO No./Product No.' column by forward filling the values
+    data_2_original['DO No./Product No.'] = data_2_original['DO No./Product No.'].ffill()
 
     # Apply the condition to 'Set Detail'
-    data['Set Detail'] = np.where(
-        data['Set Detail'].isna() | (data['Set Detail'] == '-'),
-        data['Set Code'],
-        data['Set Detail']
+    data_2_original['Set Detail'] = data_2_original.apply(
+        lambda row: row['Set Detail'] if pd.notnull(row['Set Detail']) and row['Set Detail'] != '-' else row['Set Code'],
+        axis=1
     )
 
-    # Extract relevant columns
-    columns_to_keep = ['DO No./Product No.', 'Set Code', 'Set Detail',
-                       data.columns[4], data.columns[6], data.columns[8], data.columns[10]]
-    data_cleaned = data.iloc[1:, data.columns.get_indexer(columns_to_keep)]
+    # Select the 'PCS' values for Order Quantity, Packing Quantity, Loading Quantity, and Inventory Quantity
+    data_2_original['Order Quantity'] = data_2_original.iloc[:, 4]  # PCS column for Order Quantity
+    data_2_original['Packing Quantity'] = data_2_original.iloc[:, 6]  # PCS column for Packing Quantity
+    data_2_original['Loading Quantity'] = data_2_original.iloc[:, 8]  # PCS column for Loading Quantity
+    data_2_original['Inventory Quantity'] = data_2_original.iloc[:, 10]  # PCS column for Inventory Quantity
 
-    data_cleaned.columns = ['DO No./Product No.', 'Set Code', 'Set Detail', 
-                            'Order Quantity', 'Packing Quantity', 
-                            'Loading Quantity', 'Inventory Quantity']
+    # Drop the first row which contains the repeated headers
+    data_2_final = data_2_original.drop(index=0)
+
+    # Reset the index of the cleaned dataframe
+    data_2_final.reset_index(drop=True, inplace=True)
+
+    # Remove unnamed columns
+    columns_to_keep = ['DO No./Product No.', 'Set Code', 'Set Detail', 'Order Quantity', 'Packing Quantity', 'Loading Quantity', 'Inventory Quantity']
+    data_2_cleaned_final = data_2_final.loc[:, columns_to_keep]
 
     # Convert specified fields to integers
-    data_cleaned[['Order Quantity', 'Packing Quantity', 'Loading Quantity', 'Inventory Quantity']] = data_cleaned[
-        ['Order Quantity', 'Packing Quantity', 'Loading Quantity', 'Inventory Quantity']].astype(int)
+    data_2_cleaned_final.loc[:, 'Order Quantity'] = data_2_cleaned_final['Order Quantity'].astype(int)
+    data_2_cleaned_final.loc[:, 'Packing Quantity'] = data_2_cleaned_final['Packing Quantity'].astype(int)
+    data_2_cleaned_final.loc[:, 'Loading Quantity'] = data_2_cleaned_final['Loading Quantity'].astype(int)
+    data_2_cleaned_final.loc[:, 'Inventory Quantity'] = data_2_cleaned_final['Inventory Quantity'].astype(int)
 
-    # Create a new field 'Color Code' and 'Pack Method'
-    data_cleaned['Color Code'] = data_cleaned['Set Code'].str[:2].astype(str)
-    data_cleaned['Pack Method'] = np.where(
-        data_cleaned['Set Code'].str[:2].str.isalpha(), 'AST', 
-        np.where(data_cleaned['Set Code'].str[:2].str.isdigit(), '1SL', '')
+    # Create a new field 'Color Code' by taking the first 2 digits from the 'Set Code' field and convert it to text
+    data_2_cleaned_final.loc[:, 'Color Code'] = data_2_cleaned_final['Set Code'].str[:2].astype(str)
+
+    # Create a new field 'Pack Method' based on the first two characters of 'Set Code', handle NaN values
+    data_2_cleaned_final.loc[:, 'Pack Method'] = data_2_cleaned_final['Set Code'].fillna('').apply(
+        lambda x: 'AST' if x[:2].isalpha() else ('1SL' if x[:2].isdigit() else ' ')
     )
 
-    return data_cleaned
+    return data_2_cleaned_final
 
 # Function to update 'Production Plan ID' in the OB_clean dataframe based on the SPL_clean dataframe
 def update_production_plan_id(ob_clean_df, spl_clean_df):
@@ -276,14 +297,117 @@ def reorder_and_save_columns(final_merged_data_with_status):
     # Reorder the columns
     final_merged_data_with_status = final_merged_data_with_status[desired_order]
 
-    # Save the modified DataFrame to a new Excel file in memory
-    output = BytesIO()
-    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        final_merged_data_with_status.to_excel(writer, index=False, sheet_name='Final Report')
-        writer.save()
+    # Save the modified DataFrame to a new Excel file
+    output_path = r'C:\India Plants\Marketing\Shamil Report_OB\finalizedreport.xlsx'
+    final_merged_data_with_status.to_excel(output_path, index=False)
 
-    output.seek(0)
-    return output
+    return output_path
+
+# Function to update finalized report with delivery status data
+def update_with_delivery_status(finalized_report_path, delivery_status_path):
+    # Load the files
+    finalized_report_df = pd.read_excel(finalized_report_path)
+    delivery_status_df = pd.read_excel(delivery_status_path, engine='openpyxl')
+
+    # Update relevant columns in the finalized report
+    finalized_report_df['MODE'] = finalized_report_df.apply(
+        lambda row: delivery_status_df.loc[delivery_status_df['Production Plan ID'] == row['Production Plan ID'], 'MODE'].values[0]
+        if not delivery_status_df.loc[delivery_status_df['Production Plan ID'] == row['Production Plan ID'], 'MODE'].empty else row['MODE'],
+        axis=1
+    )
+
+    finalized_report_df['EXF-PLN'] = finalized_report_df.apply(
+        lambda row: delivery_status_df.loc[delivery_status_df['Production Plan ID'] == row['Production Plan ID'], 'EXF-PLN'].values[0]
+        if not delivery_status_df.loc[delivery_status_df['Production Plan ID'] == row['Production Plan ID'], 'EXF-PLN'].empty else row['EXF-PLN'],
+        axis=1
+    )
+
+    finalized_report_df['ETD-PLN'] = finalized_report_df.apply(
+        lambda row: delivery_status_df.loc[delivery_status_df['Production Plan ID'] == row['Production Plan ID'], 'ETD-PLN'].values[0]
+        if not delivery_status_df.loc[delivery_status_df['Production Plan ID'] == row['Production Plan ID'], 'ETD-PLN'].empty else row['ETD-PLN'],
+        axis=1
+    )
+
+    finalized_report_df['POWH-PLN'] = finalized_report_df.apply(
+        lambda row: delivery_status_df.loc[delivery_status_df['Production Plan ID'] == row['Production Plan ID'], 'POWH-PLN'].values[0]
+        if not delivery_status_df.loc[delivery_status_df['Production Plan ID'] == row['Production Plan ID'], 'POWH-PLN'].empty else row['POWH-PLN'],
+        axis=1
+    )
+
+    finalized_report_df['Factory – Remarks'] = finalized_report_df.apply(
+        lambda row: delivery_status_df.loc[delivery_status_df['Production Plan ID'] == row['Production Plan ID'], 'Factory – Remarks'].values[0]
+        if not delivery_status_df.loc[delivery_status_df['Production Plan ID'] == row['Production Plan ID'], 'Factory – Remarks'].empty else row['Factory – Remarks'],
+        axis=1
+    )
+
+    # Remove rows where 'CO Qty' is less than zero
+    finalized_report_df = finalized_report_df[finalized_report_df['CO Qty'] >= 0]
+
+    # Update the 'Delays' field
+    finalized_report_df['Delays'] = finalized_report_df.apply(
+        lambda row: 0 if row['POWH-PLN'] == 0 else (pd.to_datetime(row['Requested Wh Date']) - pd.to_datetime(row['POWH-PLN'])).days,
+        axis=1
+    )
+
+    # Update the 'Delay/Early' field
+    finalized_report_df['Delay/Early'] = finalized_report_df.apply(
+        lambda row: 'No Delay' if row['Delays'] >= 0 else 'Delay',
+        axis=1
+    )
+
+    # Save the updated DataFrame to an Excel file
+    output_path_updated = r'C:\India Plants\Marketing\Shamil Report_OB\finalizedreport_updated.xlsx'
+    finalized_report_df.to_excel(output_path_updated, index=False)
+
+    # Apply conditional formatting
+    wb = load_workbook(output_path_updated)
+    ws = wb.active
+
+    # Apply conditional formatting for 'Delay/Early' and 'Status' columns
+    apply_conditional_formatting(ws)
+
+    # Save the workbook with formatting
+    wb.save(output_path_updated)
+
+    return output_path_updated
+
+# Function to apply conditional formatting to the Excel sheet
+def apply_conditional_formatting(ws):
+    # Define the dark green and red fill colors with white text
+    dark_green_fill = PatternFill(start_color="006400", end_color="006400", fill_type="solid")
+    red_fill = PatternFill(start_color="FF0000", end_color="FF0000", fill_type="solid")
+    white_font = Font(color="FFFFFF")
+
+    # Apply formatting to 'Delay/Early' column
+    delay_early_col_idx = None
+    for col in ws.iter_cols(1, ws.max_column):
+        if col[0].value == 'Delay/Early':
+            delay_early_col_idx = col[0].column
+            break
+
+    if delay_early_col_idx is not None:
+        for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=delay_early_col_idx, max_col=delay_early_col_idx):
+            for cell in row:
+                if cell.value == 'No Delay':
+                    cell.fill = dark_green_fill
+                    cell.font = white_font
+                elif cell.value == 'Delay':
+                    cell.fill = red_fill
+                    cell.font = white_font
+
+    # Apply formatting to 'Status' column
+    status_col_idx = None
+    for col in ws.iter_cols(1, ws.max_column):
+        if col[0].value == 'Status':
+            status_col_idx = col[0].column
+            break
+
+    if status_col_idx is not None:
+        for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=status_col_idx, max_col=status_col_idx):
+            for cell in row:
+                if cell.value == 'Shipped':
+                    cell.fill = dark_green_fill
+                    cell.font = white_font
 
 # Streamlit app
 def main():
@@ -301,40 +425,39 @@ def main():
     st.write("This tool processes multiple files, merges them, and applies updates and conditional formatting.")
     
     if uploaded_excel_1 and uploaded_csv and uploaded_excel_2 and uploaded_delivery_status:
-        st.write("Files uploaded successfully!")  # Debugging point
+        ob_clean_df = process_excel(uploaded_excel_1)
+        spl_clean_df = process_csv(uploaded_csv)
+        rfid_clean_df = process_rfid_excel(uploaded_excel_2)
 
-        try:
-            ob_clean_df = process_excel(uploaded_excel_1)
-            spl_clean_df = process_csv(uploaded_csv)
-            rfid_clean_df = process_rfid_excel(uploaded_excel_2)
+        # Update the 'Production Plan ID' in the OB_clean DataFrame
+        updated_df = update_production_plan_id(ob_clean_df, spl_clean_df)
 
-            # Update the 'Production Plan ID' in the OB_clean DataFrame
-            updated_df = update_production_plan_id(ob_clean_df, spl_clean_df)
+        # Merge the updated OB_clean DataFrame with SPL_clean DataFrame
+        merged_df = merge_dataframes(updated_df, spl_clean_df)
 
-            # Merge the updated OB_clean DataFrame with SPL_clean DataFrame
-            merged_df = merge_dataframes(updated_df, spl_clean_df)
+        # Perform final calculations and add columns
+        final_df = perform_final_calculations(merged_df)
 
-            # Perform final calculations and add columns
-            final_df = perform_final_calculations(merged_df)
+        # Add 'Color Code' to the final merged data based on 'Color Name'
+        final_df_with_color_code = add_color_code(final_df)
 
-            # Add 'Color Code' to the final merged data based on 'Color Name'
-            final_df_with_color_code = add_color_code(final_df)
+        # Perform final merge with RFID data and add 'Status' column
+        final_merged_data_with_status = final_merge_and_status(final_df_with_color_code, rfid_clean_df)
 
-            # Perform final merge with RFID data and add 'Status' column
-            final_merged_data_with_status = final_merge_and_status(final_df_with_color_code, rfid_clean_df)
+        # Reorder columns and save the final report
+        finalized_report_path = reorder_and_save_columns(final_merged_data_with_status)
 
-            # Reorder columns and save the final report
-            output = reorder_and_save_columns(final_merged_data_with_status)
+        # Update with delivery status data
+        output_path_updated = update_with_delivery_status(finalized_report_path, uploaded_delivery_status)
 
-            # Provide download option for the final processed data
+        # Provide download option for the final processed data
+        with open(output_path_updated, "rb") as file:
             st.download_button(
                 label="Download Finalized Report with Updates",
-                data=output.getvalue(),
+                data=file,
                 file_name="finalizedreport_updated.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
-        except Exception as e:
-            st.error(f"An error occurred: {e}")  # Error handling
 
 if __name__ == "__main__":
     main()
